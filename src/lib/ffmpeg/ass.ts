@@ -1,6 +1,7 @@
 import type {
   CaptionLine,
   CaptionStyle,
+  GraphicOverlay,
   HookBanner,
   ProgressBarSettings,
 } from "@/lib/types";
@@ -56,6 +57,8 @@ export function buildAssDocument(opts: {
    */
   timeMap?: (t: number) => number;
   progressBar?: ProgressBarSettings;
+  /** Timed motion-graphic overlays (source-time, mapped like captions). */
+  overlays?: GraphicOverlay[];
   /** Output-timeline duration (seconds); used to animate the progress bar. */
   outDuration?: number;
   /** Output canvas size; defaults to 1080x1920 (9:16). */
@@ -96,6 +99,12 @@ export function buildAssDocument(opts: {
     `Style: Banner,${style.fontFamily},${bannerFontSize},${assColor(banner.textColor)},${assColor(banner.textColor)},${assColor(banner.bgColor)},${assColor(banner.bgColor)},-1,0,0,0,100,100,1,0,4,${Math.round(bannerFontSize * 0.3)},0,8,70,70,${bannerMarginV},1`,
     // Progress bar: plain fill style, drawn as a vector rectangle.
     `Style: Progress,Arial,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1`,
+    // Overlay (box): opaque box behind text — cards & CTA pills. Alignment 5
+    // = middle-center so \pos anchors on the graphic's center. Outline value
+    // pads the box around the text.
+    `Style: OvBox,${style.fontFamily},60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,3,22,0,5,0,0,0,1`,
+    // Overlay (glyph): outlined text for emoji reactions & arrow pointers.
+    `Style: OvText,${style.fontFamily},60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,6,5,0,0,0,1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -126,6 +135,67 @@ export function buildAssDocument(opts: {
     );
   }
 
+  // Motion-graphic overlays. Each pops + fades in at its center; source-time
+  // windows are mapped onto the output timeline like captions.
+  for (const ov of opts.overlays ?? []) {
+    const s = Math.max(ov.start, clipStart);
+    const e = Math.min(ov.end, clipEnd);
+    if (e <= s) continue;
+    const evStart = map(s);
+    const evEnd = map(e);
+    if (evEnd <= evStart + 0.05) continue;
+    const px = Math.round(ov.x * PLAY_W);
+    const py = Math.round(ov.y * PLAY_H);
+    const durMs = Math.round((evEnd - evStart) * 1000);
+    // Scale pop: shoot slightly past 100% then settle.
+    const pop = "\\fscx60\\fscy60\\t(0,140,\\fscx110\\fscy110)\\t(140,240,\\fscx100\\fscy100)";
+
+    if (ov.kind === "emoji") {
+      const fs = Math.max(24, Math.round(ov.scale * PLAY_W * 0.5));
+      const rise = Math.round(PLAY_H * 0.1);
+      // Floats upward across its window and fades at the tail.
+      const tag = `{\\an5\\move(${px},${py},${px},${py - rise},0,${durMs})\\fs${fs}\\fad(120,220)\\bord${Math.max(2, Math.round(fs * 0.04))}}`;
+      events.push(
+        `Dialogue: 4,${assTime(evStart)},${assTime(evEnd)},OvText,,0,0,0,,${tag}${escapeAss(ov.text || "🔥")}`,
+      );
+      continue;
+    }
+
+    if (ov.kind === "arrow") {
+      const fs = Math.max(24, Math.round(ov.scale * PLAY_W * 0.3));
+      // \frz is counter-clockwise, so negate to make `rotation` clockwise.
+      const rot = ov.rotation ? `\\frz${(-ov.rotation).toFixed(1)}` : "";
+      const tag = `{\\an5\\pos(${px},${py})${rot}\\fs${fs}\\1c${assColor(ov.color)}\\fad(120,120)${pop}}`;
+      events.push(
+        `Dialogue: 4,${assTime(evStart)},${assTime(evEnd)},OvText,,0,0,0,,${tag}${escapeAss(ov.text || "➜")}`,
+      );
+      continue;
+    }
+
+    // notification / subscribe: opaque box (card / pill).
+    const fs = Math.max(
+      18,
+      Math.round(ov.scale * PLAY_W * (ov.kind === "subscribe" ? 0.09 : 0.07)),
+    );
+    const boxColor = assColor(ov.color);
+    if (ov.kind === "subscribe") {
+      const tag = `{\\an5\\pos(${px},${py})\\fs${fs}\\b1\\3c${boxColor}\\4c${boxColor}\\1c${assColor("#ffffff")}\\fad(120,120)${pop}}`;
+      events.push(
+        `Dialogue: 4,${assTime(evStart)},${assTime(evEnd)},OvBox,,0,0,0,,${tag}${escapeAss((ov.text || "SUBSCRIBE").toUpperCase())}`,
+      );
+      continue;
+    }
+    // notification card: bold title, optional lighter body on a 2nd line.
+    const title = escapeAss(ov.text || "New comment");
+    const body = ov.subtext.trim()
+      ? `\\N{\\b0\\fs${Math.round(fs * 0.82)}}${escapeAss(ov.subtext.trim())}`
+      : "";
+    const tag = `{\\an5\\pos(${px},${py})\\fs${fs}\\b1\\3c${boxColor}\\4c${boxColor}\\1c${assColor("#ffffff")}\\fad(120,120)${pop}}`;
+    events.push(
+      `Dialogue: 4,${assTime(evStart)},${assTime(evEnd)},OvBox,,0,0,0,,${tag}${title}${body}`,
+    );
+  }
+
   // Entrance animations, mirrored from the preview. fade/slide/bounce all
   // burn in as a fade-in (slide/bounce add motion only in the live
   // preview); pop scales the highlighted word.
@@ -141,14 +211,23 @@ export function buildAssDocument(opts: {
   const activeColor = assColor(style.activeColor);
   const activeBg = style.activeBgColor ? assColor(style.activeBgColor) : "";
   const accentColor = assColor(style.accentColor);
+  const textColor = assColor(style.textColor);
   const reveal = style.animation === "reveal";
+  const typewriter = style.animation === "typewriter";
 
-  // Decorate a non-active word: keyword coloring + optional emoji.
-  const decorate = (w: string): string => {
+  // Two-tone: base color alternates by word position (white/accent/...).
+  const twoToneColor = (idx: number) =>
+    idx % 2 === 0 ? textColor : accentColor;
+
+  // Decorate a non-active word: two-tone / keyword coloring + optional emoji.
+  const decorate = (w: string, idx: number): string => {
     const base = wordText(w);
     const withEmoji = style.autoEmoji && emojiFor(w) ? `${base} ${emojiFor(w)}` : base;
+    if (style.twoTone) {
+      return `{\\c${twoToneColor(idx)}}${withEmoji}{\\c${textColor}}`;
+    }
     if (style.highlightKeywords && isKeyword(w)) {
-      return `{\\c${accentColor}}${withEmoji}{\\c${assColor(style.textColor)}}`;
+      return `{\\c${accentColor}}${withEmoji}{\\c${textColor}}`;
     }
     return withEmoji;
   };
@@ -170,7 +249,7 @@ export function buildAssDocument(opts: {
       const evStart = map(Math.max(line.start, clipStart));
       const evEnd = map(Math.min(Math.max(line.end, holdUntil), clipEnd));
       if (evEnd <= evStart + 0.01) continue;
-      const text = line.words.map((w) => decorate(w.text)).join(" ");
+      const text = line.words.map((w, j) => decorate(w.text, j)).join(" ");
       events.push(
         `Dialogue: 1,${assTime(evStart)},${assTime(evEnd)},Caption,,0,0,0,,${fadeTag}${text}`,
       );
@@ -189,24 +268,68 @@ export function buildAssDocument(opts: {
       );
       if (evEnd <= 0.01 || evEnd <= evStart + 0.005) continue;
 
-      const rendered = line.words
-        .map((w, j) => {
-          // "reveal": only render words spoken so far.
-          if (reveal && j > i) return "";
-          if (j !== i) return decorate(w.text);
-          const highlight = activeBg
-            ? `{\\c${activeColor}\\3c${activeBg}\\bord${Math.max(outline, Math.round(fontSize * 0.16))}${popTag}}`
-            : `{\\c${activeColor}${popTag}}`;
-          const activeEmoji =
-            style.autoEmoji && emojiFor(w.text) ? ` ${emojiFor(w.text)}` : "";
-          return `${highlight}${wordText(w.text)}${activeEmoji}{\\r}`;
-        })
-        .filter((s) => s !== "")
-        .join(" ");
+      const highlight = activeBg
+        ? `{\\c${activeColor}\\3c${activeBg}\\bord${Math.max(outline, Math.round(fontSize * 0.16))}${popTag}}`
+        : `{\\c${activeColor}${popTag}}`;
+      const activeEmoji =
+        style.autoEmoji && emojiFor(word.text) ? ` ${emojiFor(word.text)}` : "";
 
-      events.push(
-        `Dialogue: 1,${assTime(evStart)},${assTime(evEnd)},Caption,,0,0,0,,${rendered}`,
-      );
+      // Builds the whole line with a caller-supplied rendering of the active
+      // word; preceding words are decorated, following words hidden
+      // (reveal / typewriter) or decorated (plain karaoke).
+      const composeLine = (activeRender: string): string =>
+        line.words
+          .map((w, j) => {
+            if ((reveal || typewriter) && j > i) return "";
+            if (j !== i) return decorate(w.text, j);
+            return activeRender;
+          })
+          .filter((s) => s !== "")
+          .join(" ");
+
+      const fullActive = `${highlight}${wordText(word.text)}${activeEmoji}{\\r}`;
+
+      if (!typewriter) {
+        events.push(
+          `Dialogue: 1,${assTime(evStart)},${assTime(evEnd)},Caption,,0,0,0,,${composeLine(fullActive)}`,
+        );
+        continue;
+      }
+
+      // Typewriter: reveal the active word letter-by-letter across its spoken
+      // window, then hold the full word until the next word begins. Hidden
+      // tail letters keep the block width/centering stable (\alpha&HFF&).
+      const chars = wordText(word.text);
+      const len = chars.length;
+      const wEndOut = map(Math.min(word.end, clipEnd));
+      const revealEnd = Math.min(evEnd, Math.max(wEndOut, evStart));
+      if (len <= 1 || revealEnd <= evStart + 0.02) {
+        events.push(
+          `Dialogue: 1,${assTime(evStart)},${assTime(evEnd)},Caption,,0,0,0,,${composeLine(fullActive)}`,
+        );
+        continue;
+      }
+      const span = revealEnd - evStart;
+      for (let k = 1; k <= len; k++) {
+        const t0 = evStart + (span * (k - 1)) / len;
+        const t1 = k === len ? revealEnd : evStart + (span * k) / len;
+        if (t1 <= t0 + 0.005) continue;
+        const typed = chars.slice(0, k);
+        const rest = chars.slice(k);
+        const active =
+          `${highlight}${typed}` +
+          (rest ? `{\\alpha&HFF&}${rest}` : "") +
+          `${activeEmoji}{\\r}`;
+        events.push(
+          `Dialogue: 1,${assTime(t0)},${assTime(t1)},Caption,,0,0,0,,${composeLine(active)}`,
+        );
+      }
+      // Hold the fully-typed word for the remainder of the window.
+      if (evEnd > revealEnd + 0.02) {
+        events.push(
+          `Dialogue: 1,${assTime(revealEnd)},${assTime(evEnd)},Caption,,0,0,0,,${composeLine(fullActive)}`,
+        );
+      }
     }
   }
 

@@ -225,27 +225,37 @@ export default function InspectorPanel() {
               Entrance animation
             </span>
             <div className="grid grid-cols-3 gap-1.5">
-              {(["none", "fade", "pop", "slide", "bounce", "reveal"] as const).map(
-                (anim) => (
-                  <button
-                    key={anim}
-                    onClick={() => st().updateCaptionStyle({ animation: anim })}
-                    className={clsx(
-                      "rounded-lg border px-2 py-1 text-[11px] font-medium capitalize transition",
-                      style.animation === anim
-                        ? "border-accent/70 bg-accent/10 text-white"
-                        : "border-ink-700 bg-ink-900 text-slate-400 hover:border-ink-500",
-                    )}
-                    title={
-                      anim === "reveal"
-                        ? "Word-by-word appear (word-highlight mode)"
+              {(
+                [
+                  "none",
+                  "fade",
+                  "pop",
+                  "slide",
+                  "bounce",
+                  "reveal",
+                  "typewriter",
+                ] as const
+              ).map((anim) => (
+                <button
+                  key={anim}
+                  onClick={() => st().updateCaptionStyle({ animation: anim })}
+                  className={clsx(
+                    "rounded-lg border px-2 py-1 text-[11px] font-medium capitalize transition",
+                    style.animation === anim
+                      ? "border-accent/70 bg-accent/10 text-white"
+                      : "border-ink-700 bg-ink-900 text-slate-400 hover:border-ink-500",
+                  )}
+                  title={
+                    anim === "reveal"
+                      ? "Word-by-word appear (word-highlight mode)"
+                      : anim === "typewriter"
+                        ? "Type the active word letter-by-letter (word-highlight mode)"
                         : undefined
-                    }
-                  >
-                    {anim}
-                  </button>
-                ),
-              )}
+                  }
+                >
+                  {anim}
+                </button>
+              ))}
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -278,6 +288,50 @@ export default function InspectorPanel() {
                 }
               />
             </label>
+            <label
+              className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400"
+              title="Alternate word colors between the text color and the accent color."
+            >
+              <span>Two-tone words</span>
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={style.twoTone}
+                onChange={(e) =>
+                  st().updateCaptionStyle({ twoTone: e.target.checked })
+                }
+              />
+            </label>
+            {style.twoTone && (
+              <ColorField
+                label="Second color"
+                value={style.accentColor}
+                onChange={(v) => st().updateCaptionStyle({ accentColor: v })}
+              />
+            )}
+            <label
+              className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400"
+              title="Solid rounded box behind the caption block."
+            >
+              <span>Caption box</span>
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={!!style.boxColor}
+                onChange={(e) =>
+                  st().updateCaptionStyle({
+                    boxColor: e.target.checked ? "#0c0e13" : "",
+                  })
+                }
+              />
+            </label>
+            {style.boxColor && (
+              <ColorField
+                label="Box color"
+                value={style.boxColor}
+                onChange={(v) => st().updateCaptionStyle({ boxColor: v })}
+              />
+            )}
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
@@ -861,6 +915,149 @@ export default function InspectorPanel() {
               <p className="mt-1 text-[10px] text-slate-600">
                 Drag it on the canvas to reposition.
               </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ---- animated graphic overlays ------------------------------------- */}
+      <section className="panel p-3">
+        <h2 className="panel-title mb-2.5">Motion Graphics</h2>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => {
+              if (!clip) return;
+              st().addOverlay({
+                id: `ov-${Date.now()}`,
+                kind: "notification",
+                text: "New comment",
+                subtext: "@creator",
+                x: 0.5,
+                y: 0.3,
+                scale: 0.15,
+                color: "#ff0000",
+                rotation: 0,
+                start: clip.start,
+                end: clip.start + 2,
+              });
+            }}
+            className="btn-ghost !py-1.5 text-[10px]"
+          >
+            💬 Notification
+          </button>
+          <button
+            onClick={() => {
+              if (!clip) return;
+              st().addOverlay({
+                id: `ov-${Date.now()}`,
+                kind: "subscribe",
+                text: "SUBSCRIBE",
+                subtext: "",
+                x: 0.5,
+                y: 0.8,
+                scale: 0.12,
+                color: "#ff0000",
+                rotation: 0,
+                start: clip.start,
+                end: clip.start + 2,
+              });
+            }}
+            className="btn-ghost !py-1.5 text-[10px]"
+          >
+            🔔 Subscribe
+          </button>
+          <button
+            onClick={() => {
+              if (!clip) return;
+              st().addOverlay({
+                id: `ov-${Date.now()}`,
+                kind: "emoji",
+                text: "🔥",
+                subtext: "",
+                x: 0.7,
+                y: 0.3,
+                scale: 0.1,
+                color: "",
+                rotation: 0,
+                start: clip.start,
+                end: clip.start + 1.5,
+              });
+            }}
+            className="btn-ghost !py-1.5 text-[10px]"
+          >
+            🔥 Emoji
+          </button>
+          <button
+            onClick={() => {
+              if (!clip) return;
+              st().addOverlay({
+                id: `ov-${Date.now()}`,
+                kind: "arrow",
+                text: "➜",
+                subtext: "",
+                x: 0.3,
+                y: 0.5,
+                scale: 0.1,
+                color: "#ffd400",
+                rotation: 0,
+                start: clip.start,
+                end: clip.start + 2,
+              });
+            }}
+            className="btn-ghost !py-1.5 text-[10px]"
+          >
+            ➜ Arrow
+          </button>
+        </div>
+        <div className="mt-2 flex flex-col gap-2">
+          {useEditorStore((s) => s.overlays).map((ov) => (
+            <div
+              key={ov.id}
+              className="rounded-lg border border-ink-700 bg-ink-900 p-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium text-slate-300">
+                  {ov.kind.toUpperCase()}: {ov.text}
+                </span>
+                <button
+                  className="text-slate-600 hover:text-brand-red"
+                  onClick={() => st().removeOverlay(ov.id)}
+                  aria-label="Remove overlay"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mt-1 flex flex-col gap-1">
+                <Slider
+                  label="Start"
+                  value={ov.start}
+                  min={0}
+                  max={clip?.end ?? 60}
+                  step={0.05}
+                  onChange={(v) => st().updateOverlay(ov.id, { start: v })}
+                  format={(v) => formatTimecode(v)}
+                />
+                <Slider
+                  label="Duration"
+                  value={ov.end - ov.start}
+                  min={0.2}
+                  max={5}
+                  step={0.05}
+                  onChange={(v) => st().updateOverlay(ov.id, { end: ov.start + v })}
+                  format={(v) => `${v.toFixed(1)}s`}
+                />
+                {ov.kind !== "emoji" && (
+                  <input
+                    type="color"
+                    value={ov.color}
+                    onChange={(e) =>
+                      st().updateOverlay(ov.id, { color: e.target.value })
+                    }
+                    className="h-6 w-full cursor-pointer rounded"
+                    title="Overlay color"
+                  />
+                )}
+              </div>
             </div>
           ))}
         </div>
